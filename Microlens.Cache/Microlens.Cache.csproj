@@ -1,10 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFrameworks>net472;net48;netstandard2.0;net8.0;net10.0</TargetFrameworks>
+	<PropertyGroup>
+		<Authors>Microlens</Authors>
+		<Copyright>Copyright © $([System.DateTime]::Now.Year) Microlens</Copyright>
+		<Description></Description>
+
+		<TargetFrameworks>net472;net48;netstandard2.0;net8.0;net10.0</TargetFrameworks>
 		<OutputType>Library</OutputType>
 		<LangVersion>7.3</LangVersion>
-    </PropertyGroup>
+
+		<RootNamespace>Microlens.Cache</RootNamespace>
+		<AssemblyName>Microlens.Cache</AssemblyName>
+
+		<PackageId>Microlens.Cahce</PackageId>
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/microlens-solutions/cache</PackageProjectUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageTags></PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net48'">
 		<Reference Include="System.Runtime.Caching" />
