@@ -19,7 +19,13 @@ internal sealed class LfuIndex(long capacity, double compactionPercentage) {
 
     internal long EvictionTarget => Volatile.Read(ref _count) - _lowWatermark;
 
-    internal static readonly PostEvictionDelegate OnEvicted = static (key, value, _, state) => ((LfuIndex)state).Untrack(key, (EntryBase)value);
+    internal static readonly PostEvictionDelegate OnEvicted = static (key, value, reason, state) => {
+        if (state is not LfuIndex index || value is not EntryBase entry) {
+            throw new InvalidOperationException($"LFU eviction callback for key '{key}' received state '{state?.GetType()}' and value '{value?.GetType()}' ({reason}).");
+        }
+
+        _ = index.Untrack(key, entry);
+    };
 
     internal void Touch(EntryBase entry) {
         if (entry.Frequency < int.MaxValue) {

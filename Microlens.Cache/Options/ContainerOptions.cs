@@ -1,4 +1,5 @@
-﻿using Microlens.Cache.Shared;
+﻿using Microlens.Cache.Contracts;
+using Microlens.Cache.Shared;
 
 namespace Microlens.Cache.Options;
 
@@ -9,7 +10,21 @@ public sealed class ContainerOptions {
 
     public double CompactionPercentage { get; set; } = Registry.OptionsCompactionPercentageDefaultValue;
 
+    public CacheExpiration? Expiration { get; set; }
+
+    public TimeSpan? ExpirationScanFrequency { get; set; }
+
+    public TimeSpan? AbsentKeyRebuildInterval { get; set; }
+
     internal void Validate(string scope) {
+        if (ExpirationScanFrequency is { } scan && scan <= TimeSpan.Zero) {
+            throw new InvalidOperationException($"{scope}: {nameof(ExpirationScanFrequency)} must be greater than zero.");
+        }
+
+        if (AbsentKeyRebuildInterval is { } interval && interval <= TimeSpan.Zero) {
+            throw new InvalidOperationException($"{scope}: {nameof(AbsentKeyRebuildInterval)} must be greater than zero.");
+        }
+
         switch (Eviction) {
             case Registry.EvictionPolicy.None:
                 return;

@@ -1,13 +1,11 @@
-﻿using System.Diagnostics;
-
-namespace Microlens.Cache.Shared;
+﻿namespace Microlens.Cache.Shared;
 
 public class Registry {
     internal const EvictionPolicy OptionsEvictionPolicyDefaultValue = EvictionPolicy.None;
 
     internal const double OptionsCompactionPercentageDefaultValue = 0.05;
 
-    internal static readonly long AbsentKeyRebuildInterval = 30 * Stopwatch.Frequency;
+    internal static readonly TimeSpan OptionsAbsentKeyRebuildIntervalDefaultValue = TimeSpan.FromSeconds(30);
 
     internal static readonly long MaximumRelativeLifetimeTicks = TimeSpan.FromDays(365 * 1000).Ticks;
 
