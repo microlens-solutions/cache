@@ -30,7 +30,7 @@ internal sealed class LfuIndex(long capacity, double compactionPercentage) {
         _ = index.Untrack(key, entry);
     };
 
-    internal void Touch(EntryBase entry) {
+    internal static void Touch(EntryBase entry) {
         if (entry.Frequency < int.MaxValue) {
             entry.Frequency++;
         }

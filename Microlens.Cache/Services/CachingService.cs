@@ -78,7 +78,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
 
         if (_containers.TryGetValue(container, out var owner) && owner.Store.TryGetValue(key, out var found) && found is not null) {
             var entry = Cast<TValue>(found, key);
-            owner.Lfu?.Touch(entry);
+            LfuIndex.Touch(entry);
 
             value = entry.Completion.Task.Result;
             return true;
@@ -96,7 +96,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
 
         if (_containers.TryGetValue(container, out var owner) && owner.TryGetCollectionKey(collection, out var collectionKey) && owner.Store.TryGetValue(collectionKey, out var found) && found is not null) {
             var entry = Cast<IReadOnlyDictionary<TKey, TValue>>(found, collectionKey);
-            owner.Lfu?.Touch(entry);
+            LfuIndex.Touch(entry);
 
             var items = entry.Completion.Task.Result;
 
@@ -190,7 +190,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
                     var stored = Cast<TValue>(found, key);
 
                     if (stored.CreatedAt >= freshAfter) {
-                        container.Lfu?.Touch(stored);
+                        LfuIndex.Touch(stored);
                         return stored;
                     }
                 }
