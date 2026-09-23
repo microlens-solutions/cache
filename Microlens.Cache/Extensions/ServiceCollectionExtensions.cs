@@ -3,6 +3,7 @@ using Microlens.Cache.Services;
 using Microlens.Cache.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System;
 
 namespace Microlens.Cache.Extensions;
 

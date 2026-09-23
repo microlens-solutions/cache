@@ -1,4 +1,6 @@
-﻿namespace Microlens.Cache.Shared;
+﻿using System;
+
+namespace Microlens.Cache.Shared;
 
 public class Registry {
     internal const EvictionPolicy OptionsEvictionPolicyDefaultValue = EvictionPolicy.None;

@@ -3,6 +3,7 @@ using Microlens.Cache.Models;
 using Microlens.Cache.Options;
 using Microlens.Cache.Shared;
 using Microsoft.Extensions.Caching.Memory;
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
