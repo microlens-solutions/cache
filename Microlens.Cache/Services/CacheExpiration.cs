@@ -20,6 +20,4 @@ public readonly struct CacheExpiration {
     public static CacheExpiration AfterWrite(TimeSpan absolute) => new(absolute, null);
 
     public static CacheExpiration AfterAccess(TimeSpan sliding) => new(null, sliding);
-
-    internal bool IsNone => Absolute is null && Sliding is null;
 }
