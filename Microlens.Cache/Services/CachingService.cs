@@ -1,151 +1,160 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Runtime.Caching;
-using System.Threading;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace Microlens.Cache.Services {
     internal class CachingService : ICachingService {
-        // Underlying .NET MemoryCache instance used to persist containers globally.
-        private readonly ObjectCache _cache;
+        // One comparer for the container registry and every map inside a container, so a key resolves to exactly one entry (C2).
+        private static readonly StringComparer KeyComparer = StringComparer.OrdinalIgnoreCase;
 
-        // A dictionary tracking fine-grained locks per specific key/container to prevent Cache Stampede (multiple concurrent threads from computing the exact same expensive operation).
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks;
+        // Minimum age (30 seconds, in Stopwatch ticks) a collection generation must reach before a lookup of an absent key may rebuild it (C3).
+        private static readonly long AbsentKeyRebuildInterval = 30 * Stopwatch.Frequency;
+
+        // Containers owned by this instance; nothing is shared with other in-process consumers (C5).
+        private readonly ConcurrentDictionary<string, Container> _containers;
 
         public CachingService() {
-            _cache = MemoryCache.Default;
-            _locks = new ConcurrentDictionary<string, SemaphoreSlim>();
+            _containers = new ConcurrentDictionary<string, Container>(KeyComparer);
         }
 
         // Interface
-        public async Task<TValue> GetOrAddAsync<TValue>(string container, string key, Func<Task<TValue>> factory, bool rebuild = false) {
-            // 1. Fetch or initialize the dictionary from the MemoryCache.
-            var dictionary = GetContainer(container);
-            string keyLock = $"{container}:{key}";
+        public Task<TValue> GetOrAddAsync<TValue>(string container, string key, Func<Task<TValue>> factory, bool rebuild = false) {
+            // 1. Rebuild (Forced Refresh) only accepts an entry created at or after this call; otherwise any entry qualifies.
+            long freshAfter = rebuild ? Stopwatch.GetTimestamp() : long.MinValue;
 
-            // 2. Rebuild (Forced Refresh).
-            if (rebuild) {
-                var removeLock = _locks.GetOrAdd(keyLock, _ => new SemaphoreSlim(1, 1));
-                await removeLock.WaitAsync();
-
-                try {
-                    // 3. Evict the existing key-value from dictionary.
-                    _ = dictionary.TryRemove(key, out _);
-                }
-                finally {
-                    _ = removeLock.Release();
-                    _ = _locks.TryRemove(keyLock, out _);
-                }
-            }
-
-            // 3. Optimictic Path (If value already exists in the dictionary, return immediately without locking).
-            if (dictionary.TryGetValue(key, out var value)) {
-                return (TValue)value;
-            }
-
-            // 4. Pessimistic Path (Cache Miss)
-            var addLock = _locks.GetOrAdd(keyLock, _ => new SemaphoreSlim(1, 1));
-            await addLock.WaitAsync();
-
-            try {
-                // 5. Double Check Locking Pattern (While this thread was waiting for the lock, another thread might have already generated the value and populated the dictionary).
-                if (dictionary.TryGetValue(key, out value)) {
-                    return (TValue)value;
-                }
-
-                value = await factory();
-
-                if (value != null) {
-                    _ = dictionary.TryAdd(key, value);
-                }
-
-                return (TValue)value;
-            }
-            finally {
-                _ = addLock.Release();
-                _ = _locks.TryRemove(keyLock, out _);
-            }
+            // 2. Hit returns the stored task as-is (allocation-free); miss returns the task of the single in-flight factory.
+            return Acquire(GetContainer(container).Values, key, factory, freshAfter).Completion.Task;
         }
 
         // Interface
-        public async Task<TValue> GetOrAddAsync<TKey, TValue>(string container, string collection, TKey key, Func<Task<ConcurrentDictionary<TKey, TValue>>> factory, bool refresh = false) {
-            if (refresh) {
-                var refreshLock = _locks.GetOrAdd($"{container}:{collection}:refresh", _ => new SemaphoreSlim(1, 1));
-                await refreshLock.WaitAsync();
+        public Task<TValue> GetOrAddAsync<TKey, TValue>(string container, string collection, TKey key, Func<Task<ConcurrentDictionary<TKey, TValue>>> factory, bool refresh = false) {
+            return GetFromCollectionAsync(GetContainer(container).Collections, collection, key, factory, refresh);
+        }
 
-                try {
-                    // 1. Force a hard rebuild to execute the factory and refresh the cache.
-                    var fresh = await GetOrAddAsync(container, collection, factory, true);
+        private static async Task<TValue> GetFromCollectionAsync<TKey, TValue>(ConcurrentDictionary<string, Entry> collections, string collection, TKey key, Func<Task<ConcurrentDictionary<TKey, TValue>>> factory, bool refresh) {
+            long requestedAt = Stopwatch.GetTimestamp();
 
-                    return fresh == null ? default : fresh.TryGetValue(key, out var value) ? value : default;
-                }
-                finally {
-                    _ = refreshLock.Release();
-                }
-            }
+            // 1. Resolve the current generation or, when refreshing, one created at or after this call.
+            var generation = Acquire(collections, collection, factory, refresh ? requestedAt : long.MinValue);
+            var items = await generation.Completion.Task.ConfigureAwait(false);
 
-            // 2. Optimictic Path (If collection already exists in the container, return immediately without locking).
-            var first = await GetOrAddAsync(container, collection, factory);
-
-            if (first == null) {
+            if (items == null) {
                 return default;
             }
 
-            // 3. Optimictic Path (If key already exists in the collection, return immediately without locking).
-            if (first.TryGetValue(key, out var value1)) {
-                return value1;
+            if (items.TryGetValue(key, out var value)) {
+                return value;
             }
 
-            // 4. Pessimistic Path (A rebuild is required as the outer collection exists but the inner key is missing).
-            var rebuildLock = _locks.GetOrAdd($"{container}:{collection}:rebuild", _ => new SemaphoreSlim(1, 1));
-            await rebuildLock.WaitAsync();
+            // 2. Absent key: a generation created after this call (always the case on refresh), or younger than the interval, is authoritative (C3).
+            if (requestedAt - generation.CreatedAt < AbsentKeyRebuildInterval) {
+                return default;
+            }
 
-            try {
-                // 5. Re-evaluate the cache state.
-                var current = await GetOrAddAsync(container, collection, factory);
+            // 3. Stale generation: rebuild once. Concurrent misses and refreshes coalesce into the first generation newer than this one (C8).
+            var rebuilt = Acquire(collections, collection, factory, generation.CreatedAt + 1);
+            items = await rebuilt.Completion.Task.ConfigureAwait(false);
 
-                // 6. Double Check Locking Pattern (If `current` has changed and is no longer pointing to `first`, another thread might have already rebuilt the collection).
-                if (current != null && current != first) {
-                    if (current.TryGetValue(key, out var value)) {
-                        return value;
+            return items != null && items.TryGetValue(key, out value) ? value : default;
+        }
+
+        private static Entry<TValue> Acquire<TValue>(ConcurrentDictionary<string, Entry> map, string key, Func<Task<TValue>> factory, long freshAfter) {
+            Entry<TValue> candidate = null;
+
+            while (true) {
+                if (map.TryGetValue(key, out var current)) {
+                    // 1. Existing entry (completed or in-flight) that satisfies the freshness requirement is shared by every caller.
+                    var typed = Cast<TValue>(current, key);
+
+                    if (typed.CreatedAt >= freshAfter) {
+                        return typed;
                     }
 
-                    // 7. It means key genuinely does not exist in the fresh rebuilt collection.
-                    return default;
+                    // 2. Stale entry: atomically swap in a new generation only if nobody replaced it first; otherwise re-evaluate.
+                    candidate = candidate ?? new Entry<TValue>();
+
+                    if (!map.TryUpdate(key, candidate, current)) {
+                        continue;
+                    }
+                }
+                else {
+                    // 3. Miss: atomically publish a new entry; losing the race means another caller's entry is re-evaluated.
+                    candidate = candidate ?? new Entry<TValue>();
+
+                    if (!map.TryAdd(key, candidate)) {
+                        continue;
+                    }
                 }
 
-                // 8. Stale Cache (If the 'current' has not changed and is is still pointing to 'first', force a hard rebuild to execute the factory and refresh the cache).
-                var second = await GetOrAddAsync(container, collection, factory, true);
-
-                return second == null ? default : second.TryGetValue(key, out var value2) ? value2 : default;
-            }
-            finally {
-                _ = rebuildLock.Release();
+                // 4. Only the caller that published the entry runs the factory; the task never faults (outcome lives in the entry).
+                _ = PopulateAsync(map, key, candidate, factory);
+                return candidate;
             }
         }
 
-        private ConcurrentDictionary<string, object> GetContainer(string container) {
-            // 1. Optimictic Path (If container already exists in the `MemoryCache`, return immediately without locking).
-            if (_cache.Contains(container)) {
-                return (ConcurrentDictionary<string, object>)_cache.Get(container);
+        private static async Task PopulateAsync<TValue>(ConcurrentDictionary<string, Entry> map, string key, Entry<TValue> entry, Func<Task<TValue>> factory) {
+            TValue value;
+
+            try {
+                value = await factory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException exception) {
+                // 1. Unpublish before completing so no caller arriving after completion observes a cancelled entry.
+                Evict(map, key, entry);
+                _ = entry.Completion.TrySetCanceled(exception.CancellationToken);
+                return;
+            }
+            catch (Exception exception) {
+                // 2. Unpublish before completing so the next caller retries, while current waiters share this failure.
+                Evict(map, key, entry);
+                _ = entry.Completion.TrySetException(exception);
+                return;
             }
 
-            // 2. If container is not found, instantiate a new case-insensitive container.
-            var current = new ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-
-            // 3. Define policy to ensure the garbage collector does not randomly evict the container.
-            var policy = new CacheItemPolicy { Priority = CacheItemPriority.NotRemovable };
-
-            // 4. Atomically add the container to `MemoryCache` or get it if another thread has already added.
-            var existing = _cache.AddOrGetExisting(container, current, policy);
-
-            // 5. If `AddOrGetExisting` returns null, it means `current` was successfully added, so returns `current`.
-            if (existing == null) {
-                return current;
+            // 3. Null results are handed to current waiters but not retained.
+            if (value == null) {
+                Evict(map, key, entry);
             }
 
-            // 6. If `AddOrGetExisting` returns an object, it means another thread has already added it, so returns `existing`.
-            return (ConcurrentDictionary<string, object>)existing;
+            _ = entry.Completion.TrySetResult(value);
+        }
+
+        private static void Evict(ConcurrentDictionary<string, Entry> map, string key, Entry entry) {
+            // Compare-and-remove: removes the key only while it still maps to this exact entry, never a newer generation (C1).
+            _ = ((ICollection<KeyValuePair<string, Entry>>)map).Remove(new KeyValuePair<string, Entry>(key, entry));
+        }
+
+        private static Entry<TValue> Cast<TValue>(Entry entry, string key) {
+            if (entry is Entry<TValue> typed) {
+                return typed;
+            }
+
+            // Loud failure instead of an InvalidCastException deep inside the caller (C6).
+            throw new InvalidOperationException($"Key '{key}' is cached as '{entry.ValueType}' and cannot be read as '{typeof(TValue)}'.");
+        }
+
+        private Container GetContainer(string container) => _containers.GetOrAdd(container, _ => new Container());
+
+        private sealed class Container {
+            // Scalar values and collections live in separate keyspaces (C6).
+            internal readonly ConcurrentDictionary<string, Entry> Values = new ConcurrentDictionary<string, Entry>(KeyComparer);
+            internal readonly ConcurrentDictionary<string, Entry> Collections = new ConcurrentDictionary<string, Entry>(KeyComparer);
+        }
+
+        private abstract class Entry {
+            // Monotonic creation stamp used to order generations for rebuild, refresh and absent-key decisions.
+            internal readonly long CreatedAt = Stopwatch.GetTimestamp();
+
+            internal abstract Type ValueType { get; }
+        }
+
+        private sealed class Entry<TValue> : Entry {
+            // Continuations run asynchronously so completing the entry never executes waiter code on the factory's thread.
+            internal readonly TaskCompletionSource<TValue> Completion = new TaskCompletionSource<TValue>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            internal override Type ValueType => typeof(TValue);
         }
     }
 }
