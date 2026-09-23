@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
-namespace Microlens.Cache.Services;
+namespace Microlens.Cache.Shared;
 
 internal static class Guard {
     internal static void NotNull<T>([NotNull] T? argument, [CallerArgumentExpression(nameof(argument))] string? name = null) {
@@ -10,7 +10,6 @@ internal static class Guard {
         }
     }
 
-    // Null means "not set" and passes; a set value must be strictly positive.
     internal static void Positive(TimeSpan? argument, [CallerArgumentExpression(nameof(argument))] string? name = null) {
         if (argument is not { } value) {
             return;

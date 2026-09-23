@@ -1,8 +1,8 @@
-﻿using Microlens.Cache.Services;
+﻿using Microlens.Cache.Shared;
 
 namespace Microlens.Cache.Options;
 
-public sealed class CachingOptions {
+public sealed class CacheOptions {
     private readonly Dictionary<string, ContainerOptions> _containers = new(StringComparer.Ordinal);
 
     public ContainerOptions Defaults { get; } = new();
@@ -18,7 +18,9 @@ public sealed class CachingOptions {
         return options;
     }
 
-    internal ContainerOptions Resolve(string name) => _containers.TryGetValue(name, out var options) ? options : Defaults;
+    internal ContainerOptions Resolve(string name) {
+        return _containers.TryGetValue(name, out var options) ? options : Defaults;
+    }
 
     internal void Validate() {
         Defaults.Validate(nameof(Defaults));
