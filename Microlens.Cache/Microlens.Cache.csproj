@@ -7,33 +7,37 @@
 
 		<TargetFrameworks>net472;net48;netstandard2.0;net8.0;net10.0</TargetFrameworks>
 		<OutputType>Library</OutputType>
-		<LangVersion>7.3</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
 
 		<RootNamespace>Microlens.Cache</RootNamespace>
 		<AssemblyName>Microlens.Cache</AssemblyName>
 
-		<PackageId>Microlens.Cahce</PackageId>
+		<PackageId>Microlens.Cache</PackageId>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-		<PackageProjectUrl>https://github.com/microlens-solutions/cache</PackageProjectUrl>
-		<RepositoryType>git</RepositoryType>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageTags></PackageTags>
+		<EnablePackageValidation>false</EnablePackageValidation>
+		<PackageValidationBaselineVersion>1.0.0</PackageValidationBaselineVersion>
+		<PackageProjectUrl>https://github.com/microlens-solutions/cache</PackageProjectUrl>
+
+		<RepositoryUrl>https://github.com/microlens-solutions/cache</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<None Include="..\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(TargetFramework)' == 'net48'">
-		<Reference Include="System.Runtime.Caching" />
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+		<PackageReference Include="PolySharp" Version="1.16.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+		</PackageReference>
 	</ItemGroup>
-
-    <ItemGroup Condition="'$(TargetFramework)' != 'net48'">
-        <PackageReference Include="System.Runtime.Caching" Version="10.0.11" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-    </ItemGroup>
 
 </Project>

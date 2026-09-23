@@ -1,12 +1,7 @@
-﻿namespace Microlens.Cache.Services {
-    public readonly struct CacheResult<TValue> {
-        public CacheResult(TValue value) {
-            Found = true;
-            Value = value;
-        }
+﻿namespace Microlens.Cache.Services;
 
-        public bool Found { get; }
+public readonly struct CacheResult<TValue>(TValue value) {
+    public bool Found { get; } = true;
 
-        public TValue Value { get; }
-    }
+    public TValue? Value { get; } = value;
 }
