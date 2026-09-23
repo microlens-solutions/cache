@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<Authors>Microlens</Authors>
 		<Copyright>Copyright © $([System.DateTime]::Now.Year) Microlens</Copyright>
-		<Description></Description>
+		<Description>Stampede-protected, container-scoped in-process caching for .NET, built on Microsoft.Extensions.Caching.Memory. Runs each factory once per key for all concurrent callers, keeps serving the previous value while a refresh loads, and applies per-container TTL with native LRU or hand-rolled LFU eviction.</Description>
 
 		<TargetFrameworks>net472;net48;netstandard2.0;net8.0;net10.0</TargetFrameworks>
 		<OutputType>Library</OutputType>
@@ -17,7 +17,7 @@
 		<PackageId>Microlens.Cache</PackageId>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageTags></PackageTags>
+		<PackageTags>cache;caching;in-memory-cache;memorycache;imemorycache;cache-stampede;single-flight;stale-while-revalidate;ttl;expiration;eviction;lru;lfu;performance;csharp</PackageTags>
 		<EnablePackageValidation>false</EnablePackageValidation>
 		<PackageValidationBaselineVersion>1.0.0</PackageValidationBaselineVersion>
 		<PackageProjectUrl>https://github.com/microlens-solutions/cache</PackageProjectUrl>
