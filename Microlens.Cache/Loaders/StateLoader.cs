@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace Microlens.Cache.Loaders;
 
-internal class StateLoader<TState, TValue> : ILoader<TValue> {
+internal readonly struct StateLoader<TState, TValue> : ILoader<TValue> {
     private readonly TState _state;
 
     private readonly Func<TState, CancellationToken, Task<TValue>> _factory;

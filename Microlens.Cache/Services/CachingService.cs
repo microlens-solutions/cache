@@ -190,7 +190,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
         _metrics.Dispose();
     }
 
-    private Task<TValue> GetOrAddCore<TValue, TLoader>(string container, string key, TLoader loader, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TLoader : class, ILoader<TValue> {
+    private Task<TValue> GetOrAddCore<TValue, TLoader>(string container, string key, TLoader loader, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TLoader : struct, ILoader<TValue> {
         ThrowIfDisposed();
 
         if (cancellationToken.IsCancellationRequested) {
@@ -203,7 +203,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
         return WithCancellation(Acquire<TValue, TLoader>(owner, key, loader, expiration ?? owner.Expiration, freshAfter).Completion.Task, cancellationToken);
     }
 
-    private Task<CacheResult<TValue>> GetFromCollectionCore<TKey, TValue, TLoader>(string container, string collection, TKey key, TLoader loader, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull where TLoader : class, ILoader<IReadOnlyDictionary<TKey, TValue>> {
+    private Task<CacheResult<TValue>> GetFromCollectionCore<TKey, TValue, TLoader>(string container, string collection, TKey key, TLoader loader, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull where TLoader : struct, ILoader<IReadOnlyDictionary<TKey, TValue>> {
         ThrowIfDisposed();
 
         if (cancellationToken.IsCancellationRequested) {
@@ -214,7 +214,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
         return GetFromCollectionAsync<TKey, TValue, TLoader>(owner, owner.GetCollectionKey(collection), key, loader, expiration ?? owner.Expiration, refresh, cancellationToken);
     }
 
-    private async Task<CacheResult<TValue>> GetFromCollectionAsync<TKey, TValue, TLoader>(Container container, CollectionKey collection, TKey key, TLoader loader, CacheExpiration expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull where TLoader : class, ILoader<IReadOnlyDictionary<TKey, TValue>> {
+    private async Task<CacheResult<TValue>> GetFromCollectionAsync<TKey, TValue, TLoader>(Container container, CollectionKey collection, TKey key, TLoader loader, CacheExpiration expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull where TLoader : struct, ILoader<IReadOnlyDictionary<TKey, TValue>> {
         long timestamp = Stopwatch.GetTimestamp();
         long freshAfter = refresh ? RefreshThreshold(container, collection) : long.MinValue;
         var first = Acquire<IReadOnlyDictionary<TKey, TValue>, TLoader>(container, collection, loader, expiration, freshAfter);
@@ -234,7 +234,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
         return items is not null && items.TryGetValue(key, out value) ? new CacheResult<TValue>(value) : default;
     }
 
-    private Entry<TValue> Acquire<TValue, TLoader>(Container container, object key, TLoader loader, CacheExpiration expiration, long freshAfter) where TLoader : class, ILoader<TValue> {
+    private Entry<TValue> Acquire<TValue, TLoader>(Container container, object key, TLoader loader, CacheExpiration expiration, long freshAfter) where TLoader : struct, ILoader<TValue> {
         Entry<TValue>? candidate = null;
 
         while (true) {
@@ -290,7 +290,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
         }
     }
 
-    private async Task PopulateAsync<TValue, TLoader>(Container container, object key, Entry<TValue> entry, TLoader loader) where TLoader : class, ILoader<TValue> {
+    private async Task PopulateAsync<TValue, TLoader>(Container container, object key, Entry<TValue> entry, TLoader loader) where TLoader : struct, ILoader<TValue> {
         Populating.Value = new Frame(entry, Populating.Value);
 
         try {
