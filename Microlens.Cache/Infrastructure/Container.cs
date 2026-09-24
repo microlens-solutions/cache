@@ -32,13 +32,13 @@ internal sealed class Container : IDisposable {
         var store = new MemoryCacheOptions();
 
         switch (options.Eviction) {
-            case Registry.EvictionPolicy.Lru:
+            case CacheRegistry.EvictionPolicy.Lru:
                 store.SizeLimit = options.Capacity;
                 store.CompactionPercentage = options.CompactionPercentage;
                 Sized = true;
                 break;
 
-            case Registry.EvictionPolicy.Lfu:
+            case CacheRegistry.EvictionPolicy.Lfu:
                 Lfu = new LfuIndex(options.Capacity, options.CompactionPercentage);
                 break;
         }

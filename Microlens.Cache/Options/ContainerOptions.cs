@@ -5,7 +5,7 @@ using System;
 namespace Microlens.Cache.Options;
 
 public sealed class ContainerOptions {
-    public Registry.EvictionPolicy Eviction { get; set; } = Registry.OptionsEvictionPolicyDefaultValue;
+    public CacheRegistry.EvictionPolicy Eviction { get; set; } = Registry.OptionsEvictionPolicyDefaultValue;
 
     public long Capacity { get; set; }
 
@@ -27,11 +27,11 @@ public sealed class ContainerOptions {
         }
 
         switch (Eviction) {
-            case Registry.EvictionPolicy.None:
+            case CacheRegistry.EvictionPolicy.None:
                 return;
 
-            case Registry.EvictionPolicy.Lru:
-            case Registry.EvictionPolicy.Lfu:
+            case CacheRegistry.EvictionPolicy.Lru:
+            case CacheRegistry.EvictionPolicy.Lfu:
                 if (Capacity <= 0) {
                     throw new InvalidOperationException($"{scope}: {nameof(Capacity)} must be greater than zero when {nameof(Eviction)} is {Eviction}.");
                 }
