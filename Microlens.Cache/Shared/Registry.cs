@@ -1,8 +1,12 @@
-﻿using System;
+using System;
 
 namespace Microlens.Cache.Shared;
 
 public class Registry {
+    [Obsolete("Registry holds constants and enums only; it is not meant to be instantiated. The public constructor will be removed in 2.0.0.")]
+    public Registry() {
+    }
+
     internal const EvictionPolicy OptionsEvictionPolicyDefaultValue = EvictionPolicy.None;
 
     internal const double OptionsCompactionPercentageDefaultValue = 0.05;
@@ -12,6 +16,18 @@ public class Registry {
     internal static readonly long MaximumRelativeLifetimeTicks = TimeSpan.FromDays(365 * 1000).Ticks;
 
     internal const int StripeCount = 128;
+
+    internal const string MeterName = "Microlens.Cache";
+
+    internal const string MetricHits = "microlens.cache.hits";
+
+    internal const string MetricLoads = "microlens.cache.loads";
+
+    internal const string MetricFailures = "microlens.cache.failures";
+
+    internal const string MetricEvictions = "microlens.cache.evictions";
+
+    internal const string MetricContainerTag = "container";
 
     public enum EvictionPolicy {
         None,

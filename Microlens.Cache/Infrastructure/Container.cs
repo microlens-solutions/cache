@@ -1,4 +1,4 @@
-﻿using Microlens.Cache.Contracts;
+using Microlens.Cache.Contracts;
 using Microlens.Cache.Models;
 using Microlens.Cache.Options;
 using Microlens.Cache.Shared;
@@ -6,12 +6,13 @@ using Microsoft.Extensions.Caching.Memory;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Microlens.Cache.Infrastructure;
 
 internal sealed class Container : IDisposable {
     private readonly ConcurrentDictionary<string, CollectionKey> _collectionKeys = new(StringComparer.Ordinal);
+
+    internal readonly string Name;
 
     internal readonly MemoryCache Store;
 
@@ -25,7 +26,9 @@ internal sealed class Container : IDisposable {
 
     internal readonly long AbsentKeyRebuildInterval;
 
-    internal Container(ContainerOptions options, ContainerOptions defaults) {
+    internal Container(string name, ContainerOptions options, ContainerOptions defaults) {
+        Name = name;
+
         var store = new MemoryCacheOptions();
 
         switch (options.Eviction) {
@@ -45,7 +48,7 @@ internal sealed class Container : IDisposable {
         }
 
         Store = new MemoryCache(store);
-        Expiration = options.Expiration ?? defaults.Expiration ?? CacheExpiration.Default;
+        Expiration = options.Expiration ?? defaults.Expiration ?? CacheExpiration.Never;
         AbsentKeyRebuildInterval = ToStopwatchTicks(options.AbsentKeyRebuildInterval ?? defaults.AbsentKeyRebuildInterval ?? Registry.OptionsAbsentKeyRebuildIntervalDefaultValue);
     }
 
@@ -53,8 +56,12 @@ internal sealed class Container : IDisposable {
         return _collectionKeys.GetOrAdd(collection, static name => new CollectionKey(name));
     }
 
-    internal bool TryGetCollectionKey(string collection, [NotNullWhen(true)] out CollectionKey? key) {
-        return _collectionKeys.TryGetValue(collection, out key);
+    internal CollectionKey LookupCollectionKey(string collection) {
+        return _collectionKeys.TryGetValue(collection, out var key) ? key : new CollectionKey(collection);
+    }
+
+    internal void ReleaseCollectionKey(string collection) {
+        _ = _collectionKeys.TryRemove(collection, out _);
     }
 
     public void Dispose() {

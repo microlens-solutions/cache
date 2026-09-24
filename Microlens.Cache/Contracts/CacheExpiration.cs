@@ -1,4 +1,4 @@
-﻿using Microlens.Cache.Shared;
+using Microlens.Cache.Shared;
 using System;
 
 namespace Microlens.Cache.Contracts;
@@ -16,7 +16,10 @@ public class CacheExpiration {
 
     public TimeSpan? Sliding { get; }
 
-    public static readonly CacheExpiration Default = new(null, null);
+    public static readonly CacheExpiration Never = new(null, null);
+
+    [Obsolete("Use CacheExpiration.Never. 'Default' means 'never expires', not 'use the container default' (pass null for that). It will be removed in 2.0.0.")]
+    public static readonly CacheExpiration Default = Never;
 
     public static CacheExpiration AfterWrite(TimeSpan absolute) => new(absolute, null);
 

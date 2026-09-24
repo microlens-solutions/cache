@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microlens.Cache.Contracts;
 using Microlens.Cache.Infrastructure;
+using Microlens.Cache.Loaders;
 using Microlens.Cache.Models;
 using Microlens.Cache.Options;
 using Microlens.Cache.Shared;
@@ -32,6 +33,8 @@ internal sealed class CachingService : ICachingService, IDisposable {
 
     private readonly StripeLock[] _stripes = CreateStripes();
 
+    private readonly CacheMetrics _metrics;
+
     private int _disposed;
 
     public CachingService(IOptions<CacheOptions> options) {
@@ -39,21 +42,16 @@ internal sealed class CachingService : ICachingService, IDisposable {
 
         _options = options.Value;
         _options.Validate();
-        _function = name => new Container(_options.Resolve(name), _options.Defaults);
+        _function = name => new Container(name, _options.Resolve(name), _options.Defaults);
+        _metrics = new CacheMetrics();
     }
 
     public Task<TValue> GetOrAddAsync<TValue>(string container, string key, Func<Task<TValue>> factory, CacheExpiration? expiration = null, bool refresh = false, CancellationToken cancellationToken = default) {
         Guard.NotNull(container);
         Guard.NotNull(key);
         Guard.NotNull(factory);
-        ThrowIfDisposed();
 
-        if (cancellationToken.IsCancellationRequested) {
-            return Task.FromCanceled<TValue>(cancellationToken);
-        }
-
-        var owner = GetContainer(container);
-        return WithCancellation(Acquire(owner, key, factory, expiration ?? owner.Expiration, refresh ? Stopwatch.GetTimestamp() : long.MinValue).Completion.Task, cancellationToken);
+        return GetOrAddCore<TValue, FactoryLoader<TValue>>(container, key, new FactoryLoader<TValue>(factory), expiration, refresh, cancellationToken);
     }
 
     public Task<CacheResult<TValue>> GetOrAddAsync<TKey, TValue>(string container, string collection, TKey key, Func<Task<IReadOnlyDictionary<TKey, TValue>>> factory, CacheExpiration? expiration = null, bool refresh = false, CancellationToken cancellationToken = default) where TKey : notnull {
@@ -61,14 +59,25 @@ internal sealed class CachingService : ICachingService, IDisposable {
         Guard.NotNull(collection);
         Guard.NotNull(key);
         Guard.NotNull(factory);
-        ThrowIfDisposed();
 
-        if (cancellationToken.IsCancellationRequested) {
-            return Task.FromCanceled<CacheResult<TValue>>(cancellationToken);
-        }
+        return GetFromCollectionCore<TKey, TValue, FactoryLoader<IReadOnlyDictionary<TKey, TValue>>>(container, collection, key, new FactoryLoader<IReadOnlyDictionary<TKey, TValue>>(factory), expiration, refresh, cancellationToken);
+    }
 
-        var owner = GetContainer(container);
-        return GetFromCollectionAsync(owner, owner.GetCollectionKey(collection), key, factory, expiration ?? owner.Expiration, refresh, cancellationToken);
+    internal Task<TValue> GetOrAddWithStateAsync<TState, TValue>(string container, string key, TState state, Func<TState, CancellationToken, Task<TValue>> factory, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) {
+        Guard.NotNull(container);
+        Guard.NotNull(key);
+        Guard.NotNull(factory);
+
+        return GetOrAddCore<TValue, StateLoader<TState, TValue>>(container, key, new StateLoader<TState, TValue>(state, factory), expiration, refresh, cancellationToken);
+    }
+
+    internal Task<CacheResult<TValue>> GetOrAddWithStateAsync<TState, TKey, TValue>(string container, string collection, TKey key, TState state, Func<TState, CancellationToken, Task<IReadOnlyDictionary<TKey, TValue>>> factory, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull {
+        Guard.NotNull(container);
+        Guard.NotNull(collection);
+        Guard.NotNull(key);
+        Guard.NotNull(factory);
+
+        return GetFromCollectionCore<TKey, TValue, StateLoader<TState, IReadOnlyDictionary<TKey, TValue>>>(container, collection, key, new StateLoader<TState, IReadOnlyDictionary<TKey, TValue>>(state, factory), expiration, refresh, cancellationToken);
     }
 
     public bool TryGet<TValue>(string container, string key, [MaybeNullWhen(false)] out TValue value) {
@@ -78,7 +87,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
 
         if (_containers.TryGetValue(container, out var owner) && owner.Store.TryGetValue(key, out var found) && found is not null) {
             var entry = Cast<TValue>(found, key);
-            LfuIndex.Touch(entry);
+            Touch(owner, entry);
 
             value = entry.Completion.Task.Result;
             return true;
@@ -94,15 +103,19 @@ internal sealed class CachingService : ICachingService, IDisposable {
         Guard.NotNull(key);
         ThrowIfDisposed();
 
-        if (_containers.TryGetValue(container, out var owner) && owner.TryGetCollectionKey(collection, out var collectionKey) && owner.Store.TryGetValue(collectionKey, out var found) && found is not null) {
-            var entry = Cast<IReadOnlyDictionary<TKey, TValue>>(found, collectionKey);
-            LfuIndex.Touch(entry);
+        if (_containers.TryGetValue(container, out var owner)) {
+            var collectionKey = owner.LookupCollectionKey(collection);
 
-            var items = entry.Completion.Task.Result;
+            if (owner.Store.TryGetValue(collectionKey, out var found) && found is not null) {
+                var entry = Cast<IReadOnlyDictionary<TKey, TValue>>(found, collectionKey);
+                Touch(owner, entry);
 
-            if (items is not null && items.TryGetValue(key, out var item)) {
-                value = item;
-                return true;
+                var items = entry.Completion.Task.Result;
+
+                if (items is not null && items.TryGetValue(key, out var item)) {
+                    value = item;
+                    return true;
+                }
             }
         }
 
@@ -142,14 +155,26 @@ internal sealed class CachingService : ICachingService, IDisposable {
         Guard.NotNull(collection);
         ThrowIfDisposed();
 
-        return _containers.TryGetValue(container, out var owner) && owner.TryGetCollectionKey(collection, out var collectionKey) && Invalidate(owner, collectionKey);
+        if (!_containers.TryGetValue(container, out var owner)) {
+            return false;
+        }
+
+        bool removed = Invalidate(owner, owner.LookupCollectionKey(collection));
+        owner.ReleaseCollectionKey(collection);
+
+        return removed;
     }
 
     public bool Clear(string container) {
         Guard.NotNull(container);
         ThrowIfDisposed();
 
-        return _containers.TryGetValue(container, out var current) && _containers.TryUpdate(container, _function(container), current);
+        if (!_containers.TryGetValue(container, out var current) || !_containers.TryUpdate(container, _function(container), current)) {
+            return false;
+        }
+
+        CancelPending(current);
+        return true;
     }
 
     public void Dispose() {
@@ -158,13 +183,41 @@ internal sealed class CachingService : ICachingService, IDisposable {
         }
 
         foreach (var pair in _containers) {
+            CancelPending(pair.Value);
             pair.Value.Dispose();
         }
+
+        _metrics.Dispose();
     }
 
-    private async Task<CacheResult<TValue>> GetFromCollectionAsync<TKey, TValue>(Container container, CollectionKey collection, TKey key, Func<Task<IReadOnlyDictionary<TKey, TValue>>> factory, CacheExpiration expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull {
+    private Task<TValue> GetOrAddCore<TValue, TLoader>(string container, string key, TLoader loader, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TLoader : class, ILoader<TValue> {
+        ThrowIfDisposed();
+
+        if (cancellationToken.IsCancellationRequested) {
+            return Task.FromCanceled<TValue>(cancellationToken);
+        }
+
+        var owner = GetContainer(container);
+        long freshAfter = refresh ? RefreshThreshold(owner, key) : long.MinValue;
+
+        return WithCancellation(Acquire<TValue, TLoader>(owner, key, loader, expiration ?? owner.Expiration, freshAfter).Completion.Task, cancellationToken);
+    }
+
+    private Task<CacheResult<TValue>> GetFromCollectionCore<TKey, TValue, TLoader>(string container, string collection, TKey key, TLoader loader, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull where TLoader : class, ILoader<IReadOnlyDictionary<TKey, TValue>> {
+        ThrowIfDisposed();
+
+        if (cancellationToken.IsCancellationRequested) {
+            return Task.FromCanceled<CacheResult<TValue>>(cancellationToken);
+        }
+
+        var owner = GetContainer(container);
+        return GetFromCollectionAsync<TKey, TValue, TLoader>(owner, owner.GetCollectionKey(collection), key, loader, expiration ?? owner.Expiration, refresh, cancellationToken);
+    }
+
+    private async Task<CacheResult<TValue>> GetFromCollectionAsync<TKey, TValue, TLoader>(Container container, CollectionKey collection, TKey key, TLoader loader, CacheExpiration expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull where TLoader : class, ILoader<IReadOnlyDictionary<TKey, TValue>> {
         long timestamp = Stopwatch.GetTimestamp();
-        var first = Acquire(container, collection, factory, expiration, refresh ? timestamp : long.MinValue);
+        long freshAfter = refresh ? RefreshThreshold(container, collection) : long.MinValue;
+        var first = Acquire<IReadOnlyDictionary<TKey, TValue>, TLoader>(container, collection, loader, expiration, freshAfter);
         var items = await WithCancellation(first.Completion.Task, cancellationToken).ConfigureAwait(false);
 
         if (items is not null && items.TryGetValue(key, out var value)) {
@@ -175,24 +228,24 @@ internal sealed class CachingService : ICachingService, IDisposable {
             return default;
         }
 
-        var second = Acquire(container, collection, factory, expiration, first.CreatedAt + 1);
+        var second = Acquire<IReadOnlyDictionary<TKey, TValue>, TLoader>(container, collection, loader, expiration, first.CreatedAt + 1);
         items = await WithCancellation(second.Completion.Task, cancellationToken).ConfigureAwait(false);
 
         return items is not null && items.TryGetValue(key, out value) ? new CacheResult<TValue>(value) : default;
     }
 
-    private Entry<TValue> Acquire<TValue>(Container container, object key, Func<Task<TValue>> factory, CacheExpiration expiration, long freshAfter) {
+    private Entry<TValue> Acquire<TValue, TLoader>(Container container, object key, TLoader loader, CacheExpiration expiration, long freshAfter) where TLoader : class, ILoader<TValue> {
         Entry<TValue>? candidate = null;
 
         while (true) {
-            if (container.Store.TryGetValue(key, out var found)) {
-                if (found != null) {
-                    var stored = Cast<TValue>(found, key);
+            if (container.Store.TryGetValue(key, out var found) && found is not null) {
+                var stored = Cast<TValue>(found, key);
 
-                    if (stored.CreatedAt >= freshAfter) {
-                        LfuIndex.Touch(stored);
-                        return stored;
-                    }
+                if (stored.CreatedAt >= freshAfter) {
+                    Touch(container, stored);
+                    _metrics.Hit(container.Name);
+
+                    return stored;
                 }
             }
 
@@ -207,60 +260,70 @@ internal sealed class CachingService : ICachingService, IDisposable {
                     return flight;
                 }
 
-                candidate ??= new Entry<TValue>(expiration);
+                candidate ??= new Entry<TValue>(expiration, loader.Cancellable);
 
                 if (!container.Pending.TryUpdate(key, candidate, pending)) {
                     continue;
                 }
             }
             else {
-                candidate ??= new Entry<TValue>(expiration);
+                candidate ??= new Entry<TValue>(expiration, loader.Cancellable);
 
                 if (!container.Pending.TryAdd(key, candidate)) {
                     continue;
                 }
 
-                if (container.Store.TryGetValue(key, out found) && Cast<TValue>(found!, key) is var latest && latest.CreatedAt >= freshAfter) {
+                if (container.Store.TryGetValue(key, out found) && found is not null && Cast<TValue>(found, key) is var latest && latest.CreatedAt >= freshAfter) {
                     _ = candidate.Completion.TrySetResult(latest.Completion.Task.Result);
                     RemovePending(container, key, candidate);
+                    candidate.Release();
+                    _metrics.Hit(container.Name);
 
                     return latest;
                 }
             }
 
-            _ = PopulateAsync(container, key, candidate, factory);
+            _metrics.Load(container.Name);
+            _ = PopulateAsync(container, key, candidate, loader);
+
             return candidate;
         }
     }
 
-    private async Task PopulateAsync<TValue>(Container container, object key, Entry<TValue> entry, Func<Task<TValue>> factory) {
-        TValue value;
-
+    private async Task PopulateAsync<TValue, TLoader>(Container container, object key, Entry<TValue> entry, TLoader loader) where TLoader : class, ILoader<TValue> {
         Populating.Value = new Frame(entry, Populating.Value);
 
         try {
-            value = await factory().ConfigureAwait(false);
+            TValue value;
+
+            try {
+                value = await loader.Load(entry.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException exception) {
+                RemovePending(container, key, entry);
+                _ = entry.Completion.TrySetCanceled(exception.CancellationToken);
+
+                return;
+            }
+            catch (Exception exception) {
+                RemovePending(container, key, entry);
+                _metrics.Failure(container.Name);
+                _ = entry.Completion.TrySetException(exception);
+
+                return;
+            }
+
+            _ = entry.Completion.TrySetResult(value);
+            Commit(container, key, entry, supersede: false);
         }
-        catch (OperationCanceledException exception) {
+        finally {
             RemovePending(container, key, entry);
-            _ = entry.Completion.TrySetCanceled(exception.CancellationToken);
-
-            return;
+            entry.Release();
         }
-        catch (Exception exception) {
-            RemovePending(container, key, entry);
-            _ = entry.Completion.TrySetException(exception);
-
-            return;
-        }
-
-        _ = entry.Completion.TrySetResult(value);
-        Commit(container, key, entry, supersede: false);
-        RemovePending(container, key, entry);
     }
 
     private void Write<TValue>(Container container, object key, TValue value, CacheExpiration expiration) {
-        var entry = new Entry<TValue>(expiration);
+        var entry = new Entry<TValue>(expiration, cancellable: false);
         _ = entry.Completion.TrySetResult(value);
 
         Commit(container, key, entry, supersede: true);
@@ -271,10 +334,12 @@ internal sealed class CachingService : ICachingService, IDisposable {
             return;
         }
 
+        EntryBase? superseded = null;
+
         try {
             lock (Stripe(key)) {
                 if (supersede) {
-                    _ = container.Pending.TryRemove(key, out _);
+                    _ = container.Pending.TryRemove(key, out superseded);
                 }
                 else if (!container.Pending.TryGetValue(key, out var pending) || !ReferenceEquals(pending, entry)) {
                     return;
@@ -294,20 +359,27 @@ internal sealed class CachingService : ICachingService, IDisposable {
             }
         }
         catch (ObjectDisposedException) { }
+        finally {
+            superseded?.Cancel();
+        }
     }
 
     private bool Invalidate(Container container, object key) {
+        EntryBase? flight;
+        bool invalidated;
+
         lock (Stripe(key)) {
-            bool invalidated = container.Pending.TryRemove(key, out _);
+            invalidated = container.Pending.TryRemove(key, out flight);
 
             if (container.Store.TryGetValue(key, out var found) && found is EntryBase stored) {
                 _ = container.Lfu?.Untrack(key, stored);
                 container.Store.Remove(key);
                 invalidated = true;
             }
-
-            return invalidated;
         }
+
+        flight?.Cancel();
+        return invalidated;
     }
 
     private static void WriteEntry(Container container, object key, EntryBase current, EntryBase? previous) {
@@ -342,6 +414,8 @@ internal sealed class CachingService : ICachingService, IDisposable {
             return;
         }
 
+        long evicted = 0;
+
         try {
             long target = lfu.EvictionTarget;
 
@@ -349,7 +423,6 @@ internal sealed class CachingService : ICachingService, IDisposable {
                 return;
             }
 
-            long evicted = 0;
             var victims = lfu.Snapshot(committed);
             victims.Sort(Victim.Order);
 
@@ -368,6 +441,26 @@ internal sealed class CachingService : ICachingService, IDisposable {
         }
         finally {
             lfu.EndCompaction();
+
+            if (evicted > 0) {
+                _metrics.Evicted(container.Name, evicted);
+            }
+        }
+    }
+
+    private static long RefreshThreshold(Container container, object key) {
+        return container.Store.TryGetValue(key, out var found) && found is EntryBase stored ? stored.CreatedAt + 1 : long.MinValue;
+    }
+
+    private static void Touch(Container container, EntryBase entry) {
+        if (container.Lfu is not null) {
+            LfuIndex.Touch(entry);
+        }
+    }
+
+    private static void CancelPending(Container container) {
+        foreach (var pair in container.Pending) {
+            pair.Value.Cancel();
         }
     }
 
