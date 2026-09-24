@@ -18,8 +18,8 @@
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageTags>cache;caching;in-memory-cache;memory-cache;imemorycache;cache-stampede;single-flight;stale-while-revalidate;ttl;expiration;eviction;lru;lfu;performance;optimization;csharp</PackageTags>
-		<EnablePackageValidation>false</EnablePackageValidation>
-		<PackageValidationBaselineVersion>2.0.0</PackageValidationBaselineVersion>
+		<EnablePackageValidation>true</EnablePackageValidation>
+		<PackageValidationBaselineVersion>2.0.1</PackageValidationBaselineVersion>
 		<PackageProjectUrl>https://github.com/microlens-solutions/cache</PackageProjectUrl>
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
