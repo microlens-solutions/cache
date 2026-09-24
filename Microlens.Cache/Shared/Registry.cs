@@ -2,11 +2,8 @@ using System;
 
 namespace Microlens.Cache.Shared;
 
-public class Registry {
-    [Obsolete("Registry holds constants and enums only; it is not meant to be instantiated. The public constructor will be removed in 2.0.0.")]
-    public Registry() {
-    }
-
+[method: Obsolete("Registry holds constants and enums only; it is not meant to be instantiated. The public constructor will be removed in 2.0.0.")]
+public class Registry() {
     internal const EvictionPolicy OptionsEvictionPolicyDefaultValue = EvictionPolicy.None;
 
     internal const double OptionsCompactionPercentageDefaultValue = 0.05;
