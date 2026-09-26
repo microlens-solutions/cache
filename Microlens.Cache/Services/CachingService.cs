@@ -11,6 +11,7 @@ using Microlens.Cache.Loaders;
 using Microlens.Cache.Models;
 using Microlens.Cache.Options;
 using Microlens.Cache.Shared;
+using Microlens.Internal;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 

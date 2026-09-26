@@ -1,6 +1,6 @@
 using Microlens.Cache.Contracts;
 using Microlens.Cache.Services;
-using Microlens.Cache.Shared;
+using Microlens.Internal;
 using System;
 using System.Collections.Generic;
 using System.Threading;

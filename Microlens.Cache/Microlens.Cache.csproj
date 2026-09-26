@@ -43,4 +43,10 @@
 		<PackageReference Include="System.Diagnostics.DiagnosticSource" Version="10.0.12" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<Reference Include="Microlens.Internal">
+			<HintPath>..\..\internal\Microlens.Internal\bin\$(Configuration)\$(TargetFramework)\Microlens.Internal.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
 </Project>

@@ -1,6 +1,6 @@
 ﻿using Microlens.Cache.Options;
 using Microlens.Cache.Services;
-using Microlens.Cache.Shared;
+using Microlens.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;

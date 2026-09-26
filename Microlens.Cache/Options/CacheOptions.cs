@@ -1,4 +1,4 @@
-﻿using Microlens.Cache.Shared;
+﻿using Microlens.Internal;
 using System;
 using System.Collections.Generic;
 
