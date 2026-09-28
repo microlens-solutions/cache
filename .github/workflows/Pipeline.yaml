@@ -31,20 +31,20 @@ jobs:
           8.0.x
           10.0.x
 
-    - name: 🔄 Restore Dependencies
-      run: dotnet restore
-
-    - name: 🛠️ Build Solution
-      run: dotnet build --configuration Release --no-restore
-
     - name: 🏷️ Extract Version
       id: get_version
       shell: bash
       run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+    - name: 🔄 Restore Dependencies
+      run: dotnet restore
+
+    - name: 🛠️ Build Solution
+      run: dotnet build --configuration Release --no-restore -p:Version=${{ steps.get_version.outputs.VERSION }}
+
     - name: 📦 Pack Library
       run: |
-        dotnet pack ${{ env.PROJECT }} --configuration Release --no-build --output ./dist -p:PackageVersion=${{ steps.get_version.outputs.VERSION }} -p:PackageReleaseNotes="Compiled binary drop for version tag: ${{ github.ref_name }} (Commit: ${{ github.sha }})"
+        dotnet pack ${{ env.PROJECT }} --configuration Release --no-build --output ./dist -p:Version=${{ steps.get_version.outputs.VERSION }} -p:PackageReleaseNotes="Compiled binary drop for version tag: ${{ github.ref_name }} (Commit: ${{ github.sha }})"
 
     - name: 🔑 OIDC Login
       uses: NuGet/login@v1
