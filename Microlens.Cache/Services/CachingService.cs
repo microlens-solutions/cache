@@ -11,6 +11,7 @@ using Microlens.Cache.Loaders;
 using Microlens.Cache.Models;
 using Microlens.Cache.Options;
 using Microlens.Cache.Shared;
+using Microlens.Essentials.Guards;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
@@ -38,7 +39,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
     private int _disposed;
 
     public CachingService(IOptions<CacheOptions> options) {
-        Guard.NotNull(options);
+        _ = Guard.NotNull(options);
 
         _options = options.Value;
         _options.Validate();
@@ -47,42 +48,42 @@ internal sealed class CachingService : ICachingService, IDisposable {
     }
 
     public Task<TValue> GetOrAddAsync<TValue>(string container, string key, Func<Task<TValue>> factory, CacheExpiration? expiration = null, bool refresh = false, CancellationToken cancellationToken = default) {
-        Guard.NotNull(container);
-        Guard.NotNull(key);
-        Guard.NotNull(factory);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(key);
+        _ = Guard.NotNull(factory);
 
         return GetOrAddCore<TValue, FactoryLoader<TValue>>(container, key, new FactoryLoader<TValue>(factory), expiration, refresh, cancellationToken);
     }
 
     public Task<CacheResult<TValue>> GetOrAddAsync<TKey, TValue>(string container, string collection, TKey key, Func<Task<IReadOnlyDictionary<TKey, TValue>>> factory, CacheExpiration? expiration = null, bool refresh = false, CancellationToken cancellationToken = default) where TKey : notnull {
-        Guard.NotNull(container);
-        Guard.NotNull(collection);
-        Guard.NotNull(key);
-        Guard.NotNull(factory);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(collection);
+        _ = Guard.NotNull(key);
+        _ = Guard.NotNull(factory);
 
         return GetFromCollectionCore<TKey, TValue, FactoryLoader<IReadOnlyDictionary<TKey, TValue>>>(container, collection, key, new FactoryLoader<IReadOnlyDictionary<TKey, TValue>>(factory), expiration, refresh, cancellationToken);
     }
 
     internal Task<TValue> GetOrAddWithStateAsync<TState, TValue>(string container, string key, TState state, Func<TState, CancellationToken, Task<TValue>> factory, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) {
-        Guard.NotNull(container);
-        Guard.NotNull(key);
-        Guard.NotNull(factory);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(key);
+        _ = Guard.NotNull(factory);
 
         return GetOrAddCore<TValue, StateLoader<TState, TValue>>(container, key, new StateLoader<TState, TValue>(state, factory), expiration, refresh, cancellationToken);
     }
 
     internal Task<CacheResult<TValue>> GetOrAddWithStateAsync<TState, TKey, TValue>(string container, string collection, TKey key, TState state, Func<TState, CancellationToken, Task<IReadOnlyDictionary<TKey, TValue>>> factory, CacheExpiration? expiration, bool refresh, CancellationToken cancellationToken) where TKey : notnull {
-        Guard.NotNull(container);
-        Guard.NotNull(collection);
-        Guard.NotNull(key);
-        Guard.NotNull(factory);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(collection);
+        _ = Guard.NotNull(key);
+        _ = Guard.NotNull(factory);
 
         return GetFromCollectionCore<TKey, TValue, StateLoader<TState, IReadOnlyDictionary<TKey, TValue>>>(container, collection, key, new StateLoader<TState, IReadOnlyDictionary<TKey, TValue>>(state, factory), expiration, refresh, cancellationToken);
     }
 
     public bool TryGet<TValue>(string container, string key, [MaybeNullWhen(false)] out TValue value) {
-        Guard.NotNull(container);
-        Guard.NotNull(key);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(key);
         ThrowIfDisposed();
 
         if (_containers.TryGetValue(container, out var owner) && owner.Store.TryGetValue(key, out var found) && found is not null) {
@@ -98,9 +99,9 @@ internal sealed class CachingService : ICachingService, IDisposable {
     }
 
     public bool TryGet<TKey, TValue>(string container, string collection, TKey key, [MaybeNullWhen(false)] out TValue value) where TKey : notnull {
-        Guard.NotNull(container);
-        Guard.NotNull(collection);
-        Guard.NotNull(key);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(collection);
+        _ = Guard.NotNull(key);
         ThrowIfDisposed();
 
         if (_containers.TryGetValue(container, out var owner)) {
@@ -124,8 +125,8 @@ internal sealed class CachingService : ICachingService, IDisposable {
     }
 
     public void Set<TValue>(string container, string key, TValue value, CacheExpiration? expiration = null) {
-        Guard.NotNull(container);
-        Guard.NotNull(key);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(key);
         ThrowIfDisposed();
 
         var owner = GetContainer(container);
@@ -133,9 +134,9 @@ internal sealed class CachingService : ICachingService, IDisposable {
     }
 
     public void SetCollection<TKey, TValue>(string container, string collection, IReadOnlyDictionary<TKey, TValue> items, CacheExpiration? expiration = null) where TKey : notnull {
-        Guard.NotNull(container);
-        Guard.NotNull(collection);
-        Guard.NotNull(items);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(collection);
+        _ = Guard.NotNull(items);
         ThrowIfDisposed();
 
         var owner = GetContainer(container);
@@ -143,16 +144,16 @@ internal sealed class CachingService : ICachingService, IDisposable {
     }
 
     public bool Remove(string container, string key) {
-        Guard.NotNull(container);
-        Guard.NotNull(key);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(key);
         ThrowIfDisposed();
 
         return _containers.TryGetValue(container, out var owner) && Invalidate(owner, key);
     }
 
     public bool RemoveCollection(string container, string collection) {
-        Guard.NotNull(container);
-        Guard.NotNull(collection);
+        _ = Guard.NotNull(container);
+        _ = Guard.NotNull(collection);
         ThrowIfDisposed();
 
         if (!_containers.TryGetValue(container, out var owner)) {
@@ -166,7 +167,7 @@ internal sealed class CachingService : ICachingService, IDisposable {
     }
 
     public bool Clear(string container) {
-        Guard.NotNull(container);
+        _ = Guard.NotNull(container);
         ThrowIfDisposed();
 
         if (!_containers.TryGetValue(container, out var current) || !_containers.TryUpdate(container, _function(container), current)) {

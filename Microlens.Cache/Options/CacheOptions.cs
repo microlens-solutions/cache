@@ -1,4 +1,4 @@
-﻿using Microlens.Cache.Shared;
+﻿using Microlens.Essentials.Guards;
 using System;
 using System.Collections.Generic;
 
@@ -10,7 +10,7 @@ public sealed class CacheOptions {
     public ContainerOptions Defaults { get; } = new();
 
     public ContainerOptions Container(string name) {
-        Guard.NotNull(name);
+        _ = Guard.NotNull(name);
 
         if (!_containers.TryGetValue(name, out var options)) {
             options = new ContainerOptions();

@@ -1,20 +1,12 @@
-using Microlens.Cache.Shared;
+using Microlens.Essentials.Guards;
 using System;
 
 namespace Microlens.Cache.Contracts;
 
-public sealed class CacheExpiration {
-    public CacheExpiration(TimeSpan? absolute, TimeSpan? sliding) {
-        Guard.Positive(absolute);
-        Guard.Positive(sliding);
+public sealed class CacheExpiration(TimeSpan? absolute, TimeSpan? sliding) {
+    public TimeSpan? Absolute { get; } = Guard.PositiveOrNull(absolute);
 
-        Absolute = absolute;
-        Sliding = sliding;
-    }
-
-    public TimeSpan? Absolute { get; }
-
-    public TimeSpan? Sliding { get; }
+    public TimeSpan? Sliding { get; } = Guard.PositiveOrNull(sliding);
 
     public static readonly CacheExpiration Never = new(null, null);
 
