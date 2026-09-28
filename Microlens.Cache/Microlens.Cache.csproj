@@ -34,7 +34,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microlens.Essentials" Version="0.0.2">
+		<PackageReference Include="Microlens.Essentials" Version="1.0.0">
 			<PrivateAssets>contentfiles;analyzers;build</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.12" />
